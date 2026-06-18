@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -169,6 +169,8 @@ const InlineAlertSheet = ({
 );
 
 export default function FinalRecommendationsScreen() {
+  const params = useLocalSearchParams<{ aiResult?: string; aiConfidence?: string }>();
+  
   const pcosForm = useAppStore((state) => state.pcosForm);
   const parsedValues = useMemo(() => pcosSchema.safeParse(pcosForm), [pcosForm]);
   const pcosPayload = useMemo(
@@ -182,6 +184,36 @@ export default function FinalRecommendationsScreen() {
   const featureCount = pcosPayload ? Object.keys(pcosPayload.features).length : 0;
 
   const runPrediction = async () => {
+    // 📷 Check karein ke agar direct Ultrasound Scan ka AI data pichli screen se aaya hai
+    if (params.aiResult) {
+      const isPositive = params.aiResult === "PCOS Positive";
+      setPcosState({
+        status: "success",
+        data: {
+          rawLabel: isPositive ? "PCOS Positive" : "Normal",
+          probability: parseFloat(params.aiConfidence || "1.0"),
+          interpretation: isPositive 
+            ? "Ultrasound scan shows patterns consistent with PCOS. Clinical review recommended."
+            : "Ultrasound scan shows a normal ovarian profile structure.",
+          // Yeh required structures hain taake aap ka ResultCard `.map` par crash na kare
+          summary: isPositive 
+            ? "Pattern suggests presence of polycystic ovarian structures." 
+            : "No significant polycystic markers detected on ultrasound image.",
+          recommendations: isPositive 
+            ? ["Consult your gynecologist for ultrasound verification.", "Discuss follicular metrics and cycle patterns with a professional."]
+            : ["Continue periodic healthy wellness tracking.", "Maintain baseline dynamic pelvic health profile."],
+          guidelines: isPositive 
+            ? ["Focus on low-glycemic nutrition options.", "Incorporate structured aerobic/resistance core sessions."]
+            : ["Keep standard balanced diet guidelines.", "Engage in routine general physical activity."],
+          priorityActions: isPositive 
+            ? ["Schedule clinical consultation.", "Track cycles closely over next 2-4 weeks."]
+            : ["Log your daily metrics normally.", "Retake screening only if new symptoms arise."]
+        } as any,
+      });
+      return;
+    }
+
+    // 📝 Purana Manual Workflow Logic
     if (!pcosPayload || !isReadyForPrediction(featureCount)) {
       return;
     }
@@ -205,7 +237,7 @@ export default function FinalRecommendationsScreen() {
 
   useEffect(() => {
     void runPrediction();
-  }, [featureCount, pcosPayload]);
+  }, [featureCount, pcosPayload, params.aiResult]);
 
   useEffect(() => {
     if (pcosState.status !== "error") {
@@ -235,7 +267,7 @@ export default function FinalRecommendationsScreen() {
       <AssessmentRouteHeader title="Final Recommendations" />
 
       <AssessmentHeroCard
-        description="Your 4-step assessment is complete. Review a clearer PCOS prediction result and the next-step guidance."
+        description="Your assessment is complete. Review a clearer PCOS prediction result and the next-step guidance."
         eyebrow="PCOS Review"
         icon="medical-outline"
         title="Final PCOS Recommendation"
@@ -257,7 +289,7 @@ export default function FinalRecommendationsScreen() {
         </FormSection>
       ) : null}
 
-      {!parsedValues.success || !isReadyForPrediction(featureCount) ? (
+      {(!parsedValues.success || !isReadyForPrediction(featureCount)) && !params.aiResult ? (
         <FormSection>
           <Text style={styles.cardTitle}>Assessment data incomplete</Text>
           <Text style={styles.incompleteCopy}>
@@ -266,7 +298,7 @@ export default function FinalRecommendationsScreen() {
         </FormSection>
       ) : null}
 
-      {pcosState.status === "loading" && parsedValues.success ? <FancyLoader /> : null}
+      {pcosState.status === "loading" && (parsedValues.success || params.aiResult) ? <FancyLoader /> : null}
 
       {pcosState.status === "success" ? <PredictionSummary result={pcosState.data} /> : null}
 
